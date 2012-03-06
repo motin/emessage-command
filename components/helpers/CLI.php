@@ -32,16 +32,18 @@ class CLI {
 	 * @param	string	$message
 	 * @param	int	$colorpriority or color code
 	 */
-	public static function ansicolor($message, $color = null) {
+	public static function ansicolor($message, $color=null) {
 		$ATTR_NORMAL = 0;
 		$ATTR_BRIGHT = 1;
 		$ATTR_DIM = 2;
+		/*
 		$ATTR_UNDERLINE = 3;
 		$ATTR_BLINK = 5;
 		$ATTR_REVERSE = 7;
 		$ATTR_HIDDEN = 8;
-
+	
 		$FG_BLACK = 30;
+		 */
 		$FG_RED = 31;
 		$FG_GREEN = 32;
 		$FG_YELLOW = 33;
@@ -50,6 +52,7 @@ class CLI {
 		$FG_CYAN = 36;
 		$FG_WHITE = 37;
 
+		/*
 		$BG_BLACK = 40;
 		$BG_RED = 41;
 		$BG_GREEN = 42;
@@ -58,18 +61,22 @@ class CLI {
 		$BG_MAGENTA = 45;
 		$BG_CYAN = 46;
 		$BG_WHITE = 47;
+		 */
 
 		$PREFIX = "\x1b[";
 		$SUFFIX = "m";
 		$SEPARATOR = ';';
 		$END_COLOR = "\x1b[m";
 
+		/*
 		$MSG_ERR = 1;
 		$MSG_WARN = 2;
+		 */
 		$MSG_INFO = 3;
+		/*
 		$MSG_VERBOSE = 4;
 		$MSG_DEBUG = 5;
-
+		 */
 		if ($color === null) {
 			$color = $MSG_INFO;
 		}
