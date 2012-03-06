@@ -1,32 +1,35 @@
 <?php
 /**
  * EMessageCommand class file.
- * 
+ *
  * @package	system.cli.commands
- * @link	http://www.yiiframework.com/
+ * @link	http://www.yiiframework.com/extension/pophpcommand/
  * @author	Olivier M <eliovir@nospam.gmail.com>
  * @copyright	Copyright &copy; 2009 Eliovir
  * @license	http://www.yiiframework.com/license/
  * @since	2009-05-25
- * @version	2011-01-20
+ * @version	2011-12-14
  */
 
 /**
  * Sorting function
+ *
+ * @version	2011-12-14
  */
 function cmp_knatcasesort($a, $b) {
 	if (is_numeric($a) && is_numeric($b)) {
 		return $a > $b;
 	} else {
-		return strtolower($a) > strtolower($b);
+		$icase = strcasecmp($a, $b);
+		return $icase !== 0 ? $icase : strcmp($a, $b);
 	}
 }
 
 /**
  * EMessageCommand converts translated messages from PHP message source files
- * 
+ *
  * To gettext PO files, and vice. It also shows statistics for translations.
- * 
+ *
  * @package	system.cli.commands
  * @author	Olivier M <eliovir@nospam.gmail.com>
  * @copyright	Copyright &copy; 2009 Eliovir
@@ -105,19 +108,20 @@ msgstr ""
 
 	/**
 	 * Provides the command description.
-	 * 
+	 *
 	 * @return	string	the command description.
 	 */
 	public function getHelp() {
 		return <<<EOD
 USAGE
-	yiic emessage <message|po|php|statistics> <config-file>
+	yiic emessage <message|po|php|duplicates|statistics> <config-file>
 
 DESCRIPTION
 	This command:
 	- searches for messages to be translated in the specified source files
 	and compiles them into PHP arrays as message source;
 	- converts messages from .php files to gettext .po files and vice;
+	- finds duplicates between all .php files;
 	- shows the translation statistics.
 
 PARAMETERS
@@ -156,13 +160,13 @@ EOD;
 
 	/**
 	 * Executes the action.
-	 * 
+	 *
 	 * @param	array	command line parameters specific for this command
 	 */
 	public function run($args) {
 		if (!isset($args[0]))
 			$this->usageError('the option is not specified.');
-		if (!in_array($args[0], array('message', 'php', 'po', 'statistics')))
+		if (!in_array($args[0], array('duplicates', 'message', 'php', 'po', 'statistics')))
 			$this->usageError('the option must be "message", a conversion target ("php" or "po") or "statistics".');
 		if (!isset($args[1]))
 			$this->usageError('the configuration file is not specified.');
@@ -182,6 +186,8 @@ EOD;
 			$this->usageError("Languages cannot be empty.");
 
 		switch ($args[0]) {
+		case 'duplicates':
+			return self::duplicates($languages, $messagePath);
 		case 'message':
 			return self::message();
  		case 'statistics':
@@ -198,7 +204,8 @@ EOD;
 
 		$ext = $args[0];
 		$options = array(
-			'fileTypes'=>array($ext), );
+			'fileTypes'=>array($ext),
+		);
 		if ($ext != 'po' || !$launchpad) {
 			$options['exclude'] = array('launchpad');
 		}
@@ -232,6 +239,14 @@ EOD;
 				$messages = include($file);
 				$header = sprintf(self::POHEADER, basename($file), $language, $year, $date);
 				self::savePO($destfile, $messages, $header);
+				// Generate .pot
+				if ($launchpad) {
+					$destfile = "$messagePath/launchpad/$template/$template.pot";
+					$msgids = array_keys($messages);
+					$messages = array_fill_keys($msgids, '');
+					$header = sprintf(self::POTHEADER, basename($file), $date);
+					self::savePO($destfile, $messages, $header);
+				}
 			// Convert PO files to PHP
 			} else {
 				$destfile = str_replace('.po', '.php', $file);
@@ -252,31 +267,11 @@ EOD;
 			}
 			echo str_replace(Yii::app()->basePath . '/', '', $file) . '=>' . ($ext == 'php' ? 'po' : 'php') . "\n";
 		}
-		// Generate PO templates from the PHP files of the main language
-		if ($launchpad && $ext == 'php') {
-			$app_config = include(Yii::app()->basePath . '/config/main.php');
-			$origfiles = CFileHelper::findFiles($messagePath, $options);
-			foreach ($origfiles as $file) {
-				$language = basename(dirname($file));
-				if (basename($file) == 'config.php') {
-					continue;
-				}
-				$template = str_replace('.php', '', basename($file));
-				$language = basename(dirname($file));
-				$destfile = "$messagePath/launchpad/$template/$template.pot";
-				$messages = include($file);
-				foreach ($messages as $msgid=>$msgstr) {
-					$messages[$msgid] = '';
-				}
-				$header = sprintf(self::POTHEADER, basename($file), $date);
-				self::savePO($destfile, $messages, $header);
-			}
-		}
 	}
 
 	/**
 	 * Loads messages from a PO file.
-	 * 
+	 *
 	 * @param	string	filepath
 	 * @return	array	message translations (source message=>translated message)
 	 */
@@ -286,7 +281,14 @@ EOD;
 		// match all msgid/msgstr entries
 		$pattern = '/(msgid\s+("(.*|\\\\")*?"\s*)+)\s+' .
 			'(msgstr\s+("(.*|\\\\")*?"\s*)+)/';
-		$content = file_get_contents($file);
+		$content = '';
+		$lines = file($file);
+		foreach ($lines as $line) {
+			if (substr($line, 0, 2) == '#~') {
+				continue;
+			}
+			$content .= $line;
+		}
 		$matched = preg_match_all($pattern, $content, $matches);
 		unset($content);
 		if (!$matched) {
@@ -309,10 +311,10 @@ EOD;
 
 	/**
 	 * Saves messages to a PO file.
-	 * 
+	 *
 	 * Note if the message has a context, the message id must be prefixed with
 	 * the context with chr(4) as the separator.
-	 * 
+	 *
 	 * @param	string	filepath
 	 * @param	array	message translations (message id=>translated message).
 	 * @param	string	header for the PO file
@@ -335,7 +337,7 @@ EOD;
 
 	/**
 	 * Encodes special characters in a message.
-	 * 
+	 *
 	 * @param	string	message to be encoded
 	 * @return	string	the encoded message
 	 */
@@ -376,7 +378,7 @@ EOD;
 
 	/**
 	 * Decodes special characters in a message.
-	 * 
+	 *
 	 * @param	string	message to be decoded
 	 * @return	string	the decoded message
 	 */
@@ -385,11 +387,65 @@ EOD;
 	}
 
 	/**
+	 * Find duplicates in all .php files.
+	 *
+	 * @param	array	$languages
+	 * @param	string	$messagePath root directory containing message translations for the application.
+	 */
+	protected static function duplicates($languages, $messagePath) {
+		$msgs = array();
+		$duplicates = array();
+		$language = $languages[0];
+		$messagePath = realpath($messagePath . '/' . $language);
+		$options = array(
+			'fileTypes'=>array('php'),
+		);
+		$origfiles = CFileHelper::findFiles($messagePath, $options);
+		$origfiles = array_merge($origfiles, glob(Yii::app()->basePath . '/modules/*/messages/' . $language . '/*.php'));
+		foreach ($origfiles as $origfile) {
+			$msgs[$origfile] = include($origfile);
+			$msgids = array_keys($msgs[$origfile]);
+			foreach ($msgids as $msg) {
+				if ($msg === 'translator-credits') {
+					continue;
+				}
+				foreach ($msgs as $file=>$translations) {
+					if ($file === $origfile) {
+						continue;
+					}
+					if (in_array($msg, array_keys($translations))) {
+						if (!isset($duplicates[$msg])) {
+							$duplicates[$msg] = array($origfile);
+						}
+						if (!in_array($file, $duplicates[$msg])) {
+							$duplicates[$msg][] = $file;
+						}
+					}
+				}
+			}
+		}
+		// display
+		foreach ($duplicates as $msg=>$files) {
+			var_export($msg);
+			echo PHP_EOL;
+			foreach ($files as $file) {
+				echo str_repeat(' ', 10) . $file . PHP_EOL;
+			}
+		}
+
+	}
+
+	/**
 	 * Message command
 	 */
 	protected function message() {
 		echo CLI::ansicolor('Searching message to be translated.', 'CYAN') . PHP_EOL;
 		$translator = 'Yii::t';
+		// default values
+		$sourcePath = '.';
+		$languages = array();
+		$messagePath = 'protected/messages';
+		//
 		extract(self::$config);
 		$options = array();
 		if (isset($fileTypes))
@@ -517,7 +573,7 @@ EOD;
 	 * @param	string	$category category name
 	 * @param	string	$language language ID
 	 * @return	string	the message file path
-	 * @see		{@link CPhpMessageSource::getMessageFile()}
+	 * @see		CPhpMessageSource::getMessageFile()
 	 */
 	protected function getPhpMessageFile($category, $language) {
 		if (!isset($this->_files[$category][$language])) {
@@ -525,7 +581,7 @@ EOD;
 				$moduleClass = substr($category, 0, $pos);
 				$moduleCategory = substr($category, $pos + 1);
 				if (!class_exists($moduleClass, false)) {
-					$module = Yii::app()->getModule(strtolower(substr($moduleClass, 0, -6)));
+					Yii::app()->getModule(strtolower(substr($moduleClass, 0, -6)));
 				}
 				$class = new ReflectionClass($moduleClass);
 				$this->_files[$category][$language] = dirname($class->getFileName()) . DIRECTORY_SEPARATOR . 'messages' . DIRECTORY_SEPARATOR . $language . DIRECTORY_SEPARATOR . $moduleCategory . '.php';
@@ -534,6 +590,9 @@ EOD;
 			}
 			$dir = dirname($this->_files[$category][$language]);
 			if (!file_exists($dir)) {
+				if (strlen($dir) > 255) {
+					echo $dir;
+				}
 				mkdir($dir, 0777, true);
 			}
 		}
@@ -545,7 +604,7 @@ EOD;
 	 *
 	 * @static
 	 * @access	protected
-	 * @param	mixed	$languages 
+	 * @param	mixed	$languages
 	 * @return	void
 	 */
 	protected static function statistics($languages) {
