@@ -1,0 +1,21 @@
+This is a git mirror and fork of the EMessageCommand found on http://www.yiiframework.com/extension/pophpcommand/
+
+Installation:
+
+1. Add the extension to your Yii application
+
+git submodule add git://github.com/motin/emessage-command.git protected/extensions/emessage-command/
+
+2. Add the following items for import and commandMap to your console.php config file:
+
+	'import' => array(
+		'application.extensions.emessage-command.components.helpers.CLI',
+	),
+	'commandMap' => array(
+		'emessage' => array(
+			'class' => 'application.extensions.emessage-command.commands.EMessageCommand',
+		),
+	),
+
+
+Usage instructions and examples are available on http://www.yiiframework.com/extension/pophpcommand/
