@@ -1,34 +1,38 @@
 <?php
 /**
  * EMessageCommand class file.
- *
- * @author Olivier M <eliovir@nospam.gmail.com>
- * @link http://www.yiiframework.com/
- * @copyright Copyright &copy; 2009 Eliovir
- * @license http://www.yiiframework.com/license/
- * @package system.cli.commands
- * @since 20090525
- * @version 20100609
+ * 
+ * @package	system.cli.commands
+ * @link	http://www.yiiframework.com/
+ * @author	Olivier M <eliovir@nospam.gmail.com>
+ * @copyright	Copyright &copy; 2009 Eliovir
+ * @license	http://www.yiiframework.com/license/
+ * @since	2009-05-25
+ * @version	2011-01-20
  */
 
 /**
  * Sorting function
  */
-function cmp_knatcasesort($a,$b) {
+function cmp_knatcasesort($a, $b) {
 	if (is_numeric($a) && is_numeric($b)) {
 		return $a > $b;
 	} else {
 		return strtolower($a) > strtolower($b);
 	}
-} 
+}
+
 /**
  * EMessageCommand converts translated messages from PHP message source files
- * to gettext PO files, and vice. It also shows statistics for translations.
- *
- * @author Olivier M <eliovir@nospam.gmail.com>
- * @version $Id: $
- * @package system.cli.commands
- * @since 1.0.x
+ * 
+ * To gettext PO files, and vice. It also shows statistics for translations.
+ * 
+ * @package	system.cli.commands
+ * @author	Olivier M <eliovir@nospam.gmail.com>
+ * @copyright	Copyright &copy; 2009 Eliovir
+ * @license	http://www.yiiframework.com/license/
+ * @since	2009-05-25
+ * @version	2011-01-20
  */
 class EMessageCommand extends CConsoleCommand {
 	const PHPHEADER = "<?php
@@ -88,14 +92,21 @@ msgstr ""
 "Generated-By: Yii EMessage\n"
 
 ';
+
 	/**
-	 * config array from protected/message/config.php
+	 * Config array from protected/message/config.php
 	 */
 	protected static $config = array();
 
 	/**
+	 * @var	array	Files for the module - category - language
+	 */
+	private $_files = array();
+
+	/**
 	 * Provides the command description.
-	 * @return string the command description.
+	 * 
+	 * @return	string	the command description.
 	 */
 	public function getHelp() {
 		return <<<EOD
@@ -142,9 +153,11 @@ PARAMETERS
 
 EOD;
 	}
+
 	/**
-	 * Execute the action.
-	 * @param array command line parameters specific for this command
+	 * Executes the action.
+	 * 
+	 * @param	array	command line parameters specific for this command
 	 */
 	public function run($args) {
 		if (!isset($args[0]))
@@ -185,12 +198,13 @@ EOD;
 
 		$ext = $args[0];
 		$options = array(
-			'fileTypes'=>array($ext),);
+			'fileTypes'=>array($ext), );
 		if ($ext != 'po' || !$launchpad) {
 			$options['exclude'] = array('launchpad');
 		}
 		$messagePath = realpath($messagePath);
 		$origfiles = CFileHelper::findFiles($messagePath, $options);
+		$origfiles = array_merge($origfiles, glob(Yii::app()->basePath . '/modules/*/messages/*/*.' . $ext));
 		foreach ($origfiles as $file) {
 			$language = basename(dirname($file));
 			// Convert PHP files to PO
@@ -202,11 +216,18 @@ EOD;
 				if ($launchpad) {
 					$template = str_replace('.php', '', basename($file));
 					$language = basename(dirname($file));
+					// template = nameModule.template if module
+					$parts = explode('/', $file);
+					if (in_array('modules', $parts)) {
+						$template = $parts[array_search('modules', $parts) + 1] . '.' . $template;
+					}
+					unset($parts);
+					// -
 					$destdir = "$messagePath/launchpad/$template/";
 					if (!file_exists($destdir)) {
 						mkdir($destdir);
 					}
-					$destfile = "$messagePath/launchpad/$template/$language.po";
+					$destfile = "$destdir/$language.po";
 				}
 				$messages = include($file);
 				$header = sprintf(self::POHEADER, basename($file), $language, $year, $date);
@@ -217,7 +238,12 @@ EOD;
 				if ($launchpad) {
 					$language = str_replace(".$ext", '', basename($file));
 					$template = basename(dirname($file));
-					$destfile = "$messagePath/$language/$template.php";
+					if (($pos = strpos($template, '.')) !== false) {
+						$moduleClass = substr($template, 0, $pos);
+						$moduleCategory = substr($template, $pos + 1);
+						$template = $moduleClass . 'Module.' . $moduleCategory;
+					}
+					$destfile = $this->getPhpMessageFile($template, $language);
 				}
 				$array = self::loadPO($file, '');
 				uksort($array, 'cmp_knatcasesort');
@@ -250,8 +276,9 @@ EOD;
 
 	/**
 	 * Loads messages from a PO file.
-	 * @param string file path
-	 * @return array message translations (source message=>translated message)
+	 * 
+	 * @param	string	filepath
+	 * @return	array	message translations (source message=>translated message)
 	 */
 	protected static function loadPO($file) {
 		$messages = array();
@@ -279,16 +306,18 @@ EOD;
 		}
 		return $messages;
 	}
-	
+
 	/**
 	 * Saves messages to a PO file.
-	 * @param string file path
-	 * @param array message translations (message id=>translated message).
-	 * @param string header for the PO file
+	 * 
 	 * Note if the message has a context, the message id must be prefixed with
 	 * the context with chr(4) as the separator.
+	 * 
+	 * @param	string	filepath
+	 * @param	array	message translations (message id=>translated message).
+	 * @param	string	header for the PO file
 	 */
-	protected static function savePO($file, $messages, $header='') {
+	protected static function savePO($file, $messages, $header = '') {
 		$content = $header;
 		foreach ($messages as $id=>$message) {
 			if ($id == 'translator-credits') {
@@ -306,29 +335,58 @@ EOD;
 
 	/**
 	 * Encodes special characters in a message.
-	 * @param string message to be encoded
-	 * @return string the encoded message
+	 * 
+	 * @param	string	message to be encoded
+	 * @return	string	the encoded message
 	 */
-	public static function encode($string) {
+	public static function encode($string, $beginning = 'msgstr') {
 		$encoded = str_replace(array('\\', '"', "\n", "\t", "\r"), array('\\\\', '\\"', "\\n", '\\t', '\\r'), $string);
-		if (strlen($encoded) > 75) {
-			$encoded = "\"\n\"" . self::utf8_wordwrap($encoded, 77, "\"\n\"");
+		$length = strlen($encoded);
+		//$length = mb_strlen($encoded);
+		$max_length = 77;
+		$text = $length + strlen($beginning) >= $max_length && $length < $max_length ? "\"\n\"" : '';
+		$word = '';
+		$pos = 0;
+		$prev1 = null;
+		for ($i = 0; $i<$length; $i++) {
+			$letter = substr($encoded, $i, 1);
+			//$letter = mb_substr($encoded, $i, 1);
+			if (
+				$i - $pos == $max_length || ($prev1 == '\\' &&  $letter == 'n')) {
+				if ($prev1 == '\\' && $letter == 'n') {
+					$text .= $word . $letter;
+					$letter = '';
+					$word = '';
+				}
+				$text .= "\"\n\"";
+				$pos = $i;
+			}
+			$word .= $letter;
+			if ($letter == ' ' || $letter == "\t" || $letter == '-') {
+				$text .= $word;
+				$word = '';
+			}
+			$prev1 = $letter;
 		}
-		return $encoded;
+		if ($pos != 0) {
+			$text = "\"\n\"" . $text;
+		}
+		return $text . $word;
 	}
 
 	/**
 	 * Decodes special characters in a message.
-	 * @param string message to be decoded
-	 * @return string the decoded message
+	 * 
+	 * @param	string	message to be decoded
+	 * @return	string	the decoded message
 	 */
 	public static function decode($string) {
 		return str_replace(array("\"\n\"", '\\\\"', '\\"', "\\n", '\\t', '\\r'), array('', '\\"', '"', "\n", "\t", "\r"), $string);
 	}
 
 	/**
-	* message command
-	*/
+	 * Message command
+	 */
 	protected function message() {
 		echo CLI::ansicolor('Searching message to be translated.', 'CYAN') . PHP_EOL;
 		$translator = 'Yii::t';
@@ -351,18 +409,27 @@ EOD;
 				@mkdir($dir);
 			foreach ($messages as $category=>$msgs) {
 				$msgs = array_values(array_unique($msgs));
-				$this->generateMessageFile($msgs, $dir . DIRECTORY_SEPARATOR . $category . '.php');
+				$file = $this->getPhpMessageFile($category, $language);
+				$this->generateMessageFile($msgs, $file);
 			}
 		}
 		echo CLI::ansicolor('Message source compiled.', 'CYAN') . PHP_EOL;
 	}
 
+	/**
+	 * Extracts the messages from the PHP source codes.
+	 *
+	 * @access	protected
+	 * @param	string	file path
+	 * @param	string	translator function, eg. 'Yii::t'
+	 * @return	array	messages to translate, by category (category=>(messages))
+	 */
 	protected function extractMessages($fileName, $translator) {
 		echo 'Extracting messages from ' . str_replace(dirname(Yii::app()->basePath) . DIRECTORY_SEPARATOR, '', realpath($fileName)) . "...\n"; // more readable
 		$subject = file_get_contents($fileName);
 		$n = preg_match_all('/\b' . $translator . '\s*\(\s*(\'.*?(?<!\\\\)\'|".*?(?<!\\\\)")\s*,\s*(\'.*?(?<!\\\\)\'|".*?(?<!\\\\)")\s*[,\)]/s', $subject, $matches, PREG_SET_ORDER);
 		$messages = array();
-		for ($i=0; $i<$n; ++$i) {
+		for ($i = 0; $i<$n; ++$i) {
 			$category = substr($matches[$i][1], 1, -1);
 			if ($category == 'yii') {
 				continue;
@@ -376,7 +443,7 @@ EOD;
 		$translator = '__';
 		$n = preg_match_all('/\b' . $translator . '\s*\(\s*(\'.*?(?<!\\\\)\'|".*?(?<!\\\\)")\s*[,\)]/s', $subject, $matches, PREG_SET_ORDER);
 		$category = 'main';
-		for ($i=0; $i<$n; ++$i) {
+		for ($i = 0; $i<$n; ++$i) {
 			$message = $matches[$i][1];
 			$messages[$category][] = eval("return $message;"); // use eval to eliminate quote escape
 		}
@@ -384,6 +451,14 @@ EOD;
 		return $messages;
 	}
 
+	/**
+	 * Saves the messages in a PHP file.
+	 *
+	 * @access	protected
+	 * @param	array	messages and translations (message id => translated message)
+	 * @param	string	file path where to translate
+	 * @return	void
+	 */
 	protected function generateMessageFile($messages, $fileName) {
 		echo 'Saving messages to ' . str_replace(dirname(Yii::app()->basePath) . DIRECTORY_SEPARATOR, '', realpath($fileName)) . '... '; // more readable
 		if (is_file($fileName)) {
@@ -431,37 +506,123 @@ EOD;
 		$content = self::PHPHEADER . "$array;" . PHP_EOL;
 		file_put_contents($fileName, $content);
 	}
+	/**
+	 * Determines the PHP message file name based on the given category and language.
+	 *
+	 * If the category name contains a dot, it will be split into the module class name and the category name.
+	 * In this case, the message file will be assumed to be located within the 'messages' subdirectory of
+	 * the directory containing the module class file.
+	 * Otherwise, the message file is assumed to be under the {@link CPhpMessageSource->basePath}.
+	 *
+	 * @param	string	$category category name
+	 * @param	string	$language language ID
+	 * @return	string	the message file path
+	 * @see		{@link CPhpMessageSource::getMessageFile()}
+	 */
+	protected function getPhpMessageFile($category, $language) {
+		if (!isset($this->_files[$category][$language])) {
+			if (($pos = strpos($category, '.')) !== false) {
+				$moduleClass = substr($category, 0, $pos);
+				$moduleCategory = substr($category, $pos + 1);
+				if (!class_exists($moduleClass, false)) {
+					$module = Yii::app()->getModule(strtolower(substr($moduleClass, 0, -6)));
+				}
+				$class = new ReflectionClass($moduleClass);
+				$this->_files[$category][$language] = dirname($class->getFileName()) . DIRECTORY_SEPARATOR . 'messages' . DIRECTORY_SEPARATOR . $language . DIRECTORY_SEPARATOR . $moduleCategory . '.php';
+			} else {
+				$this->_files[$category][$language] = self::$config['messagePath'] . DIRECTORY_SEPARATOR . $language . DIRECTORY_SEPARATOR . $category . '.php';
+			}
+			$dir = dirname($this->_files[$category][$language]);
+			if (!file_exists($dir)) {
+				mkdir($dir, 0777, true);
+			}
+		}
+		return $this->_files[$category][$language];
+	}
 
 	/**
-	* statistics command
-	*/
+	 * Statistics command
+	 *
+	 * @static
+	 * @access	protected
+	 * @param	mixed	$languages 
+	 * @return	void
+	 */
 	protected static function statistics($languages) {
-		$pad = 18;
-		echo CLI::hline($pad * 4);
-		echo str_pad('language', $pad, ' ', STR_PAD_RIGHT) .
-			str_pad('file', $pad, ' ', STR_PAD_RIGHT) .
-			str_pad('untranslated', $pad, ' ', STR_PAD_RIGHT) .
-			str_pad('total', $pad, ' ', STR_PAD_RIGHT) .
-			"\n";
-		echo CLI::hline($pad * 4);
+		/*
+		 * Get max pad for each column
+		 */
+		$pads = array(
+			'language'=>0,
+			'file'=>0,
+			'untranslated'=>0,
+			'total'=>0,
+		);
+		$stats = array();
+		foreach ($pads as $name=>$v) {
+			$pads[$name] = strlen($name);
+		}
 		foreach ($languages as $language) {
+			if ($pads['language'] < strlen($language)) {
+				$pads['language'] = strlen($language);
+			}
 			$stat = self::stat($language);
-			$ratio = 1 - ($stat['untranslated']/$stat['total']);
-			echo self::colorize(str_pad($language, $pad, ' ', STR_PAD_RIGHT) .
-				str_repeat(' ', $pad) .
-				str_pad($stat['untranslated'], $pad, ' ', STR_PAD_RIGHT) .
-				str_pad($stat['total'], $pad, ' ', STR_PAD_RIGHT), $ratio) .
+			$stats[$language] = $stat;
+			foreach ($stat['pads'] as $k=>$v) {
+				if ($pads[$k] < $v) {
+					$pads[$k] = $v;
+				}
+			}
+		}
+		$pads_sum = 0;
+		foreach ($pads as $name=>$pad) {
+			$pads[$name]++;
+			$pads_sum += $pads[$name];
+		}
+
+		/*
+		 * Header
+		 */
+		echo CLI::hline($pads_sum);
+		foreach ($pads as $name=>$pad) {
+			echo str_pad($name, $pad, ' ', STR_PAD_RIGHT);
+		}
+		echo PHP_EOL;
+		echo CLI::hline($pads_sum);
+
+		/*
+		 * Body
+		 */
+		foreach ($languages as $language) {
+			$stat = $stats[$language];
+			if ($stat['total'] == 0) {
+				$ratio = 0;
+			} else {
+				$ratio = 1 - ($stat['untranslated']/$stat['total']);
+			}
+			echo self::colorize(str_pad($language, $pads['language'], ' ', STR_PAD_RIGHT) .
+				str_repeat(' ', $pads['file']) .
+				str_pad($stat['untranslated'], $pads['untranslated'], ' ', STR_PAD_RIGHT) .
+				str_pad($stat['total'], $pads['total'], ' ', STR_PAD_RIGHT), $ratio) .
 				"\n";
 			foreach ($stat['details'] as $f=>$s) {
-				$ratio = 1 - ($s['untranslated'] / $s['total']);
-				echo str_repeat(' ', $pad) .
-					self::colorize(str_pad($f, $pad, ' ', STR_PAD_RIGHT) .
-					str_pad($s['untranslated'], $pad, ' ', STR_PAD_RIGHT) .
-					str_pad($s['total'], $pad, ' ', STR_PAD_RIGHT), $ratio) .
+				if ($s['total'] == 0) {
+					$ratio = 0;
+				} else {
+					$ratio = 1 - ($s['untranslated'] / $s['total']);
+				}
+				echo str_repeat(' ', $pads['language']) .
+					self::colorize(str_pad($f, $pads['file'], ' ', STR_PAD_RIGHT) .
+					str_pad($s['untranslated'], $pads['untranslated'], ' ', STR_PAD_RIGHT) .
+					str_pad($s['total'], $pads['total'], ' ', STR_PAD_RIGHT), $ratio) .
 					"\n";
 			}
-			echo CLI::hline($pad * 4);
+			echo CLI::hline($pads_sum);
 		}
+
+		/*
+		 * Footer
+		 */
 		echo self::colorize('0%', 0) . ' ' .
 			self::colorize('>0%', 0.01) . ' ' .
 			self::colorize('25%', 0.25) . ' ' .
@@ -469,21 +630,42 @@ EOD;
 			self::colorize('75%', 0.75) . ' ' .
 			self::colorize('100%', 1) . PHP_EOL;
 	}
+
 	protected static function stat($language) {
 		$stat = array('untranslated'=>0, 'total'=>0, 'details'=>array());
-		$d = Yii::app()->basePath . '/messages/' . $language;
-		$files = FileSystem::rglob('*php', 0, $d);
+		$pads = array('untranslated'=>0, 'total'=>0, 'file'=>0);
+		$d = self::$config['messagePath'] . '/' . $language;
+		$files = glob($d . '/*php');
+		$files = array_merge($files, glob(Yii::app()->basePath . '/modules/*/messages/' . $language . '/*php'));
 		foreach ($files as $f) {
+			$f = realpath($f);
 			$t = include($f);
 			$c = array_count_values($t);
 			if (!isset($c['']))
 				$c[''] = 0;
 			$stat['untranslated'] += $c[''];
 			$stat['total'] += count($t);
-			$stat['details'][basename($f)] = array('untranslated'=>$c[''], 'total'=>count($t));
+			$d = basename(dirname(dirname(dirname($f))));
+			if ($d == basename(Yii::app()->basePath)) {
+				$d = '';
+			} else {
+				$d .= '/';
+			}
+			$display = $d . basename($f);
+			$stat['details'][$display] = array('untranslated'=>$c[''], 'total'=>count($t));
+			/*
+			 * Max pad
+			 */
+			if ($pads['file'] < strlen($display)) {
+				$pads['file'] = strlen($display);
+			}
 		}
+		$pads['untranslated'] = strlen($stat['untranslated']);
+		$pads['total'] = strlen($stat['total']);
+		$stat['pads'] = $pads;
 		return $stat;
 	}
+
 	public static function colorize($message, $ratio) {
 		if ($ratio == 1) {
 			return CLI::ansicolor($message, 'GREEN');
@@ -499,56 +681,6 @@ EOD;
 			return CLI::ansicolor($message, 'RED');
 		}
 	}
-	/**
-	 * multibite wordwrap
-	 *
-	 * @param string	The input string
-	 * @param int		The column width
-	 * @param string	The line is broken using the optional break parameter
-	 */
-	protected static function utf8_wordwrap($str, $width=75, $break=PHP_EOL) {
-		$str = preg_split('/([\x20\r\n\t]++|\xc2\xa0)/sSX', $str, -1, PREG_SPLIT_NO_EMPTY);
-		$len = 0;
-		$return = array();
-		// a rebuild line
-		$line = array();
-		// parts of a word
-		$parts = array();
-		foreach ($str as $word) {
-			$tmp = mb_strlen($word, 'utf-8') + 1;
-			$len += $tmp;
-			// cut at '-'
-			if ($len > $width && count($line) == 0) {
-				$len2 = $len - $tmp;
-				$parts = explode('-', $word);
-				foreach ($parts as $n=>$part) {
-					if (count($line) == 0) {
-						$line[] = ''; // add a place in the line fo the parts
-					}
-					$tmp2 = mb_strlen($part, 'utf-8') + 1;
-					$len2 += $tmp2;
-					if ($len2 > $width) {
-						$return[] = join(' ', $line);
-						$len2 = $tmp2;
-						$line = array();
-					}
-					if (count($line) == 0) {
-						$line[] = '';
-					}
-					$line[count($line) -1] .= $part . (isset($parts[$n + 1]) ? '-' : '');
-				}
-				$len = $len2;
-				continue;
-			} elseif ($len > $width) {
-				$return[] = join(' ', $line) . ' ';
-				$len = $tmp;
-				$line = array();
-			}
-			$line[] = $word;
-		}
-		if (count($line)) {
-			$return[] = join(' ', $line);
-		}
-		return join($break, $return);
-	}
+
 }
+
