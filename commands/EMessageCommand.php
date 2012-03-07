@@ -280,6 +280,9 @@ EOD;
 		$messagePath = realpath($messagePath);
 		$origfiles = CFileHelper::findFiles($messagePath, $options);
 		$origfiles = array_merge($origfiles, glob(Yii::app()->basePath . '/modules/*/messages/*/*.' . $ext));
+		if (empty($origfiles)) {
+			$this->fatalError('No files to convert where found in neither ' . $messagePath . ' nor ' . Yii::app()->basePath . '/modules/*/messages/*/*.' . $ext);
+		} else
 		foreach ($origfiles as $file) {
 			$language = basename(dirname($file));
 			// Convert PHP files to PO
@@ -829,6 +832,12 @@ EOD;
 		} elseif ($ratio == 0) {
 			return CLI::ansicolor($message, 'RED');
 		}
+	}
+
+	public function fatalError($message)
+	{
+		echo "Error: $message\n\n";
+		exit(1);
 	}
 
 }
