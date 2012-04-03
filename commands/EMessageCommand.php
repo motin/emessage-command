@@ -81,7 +81,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: Yii EMessage\n"
 "Generated-By: Yii EMessage\n"
-"Plural-Forms: nplurals = 2; plural = n ! = 1;\n"
+"Plural-Forms: nplurals = 2; plural = n != 1;\n"
 
 ';
 	const POTHEADER = '# translation of %1$s to LANGUAGE
